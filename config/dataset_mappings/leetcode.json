@@ -1,0 +1,14 @@
+{
+  "datasetName": "leetcode",
+  "strict": false,
+  "columns": {
+    "id": "id",
+    "title": "title",
+    "description": "description",
+    "difficulty": "difficulty",
+    "examples": null,
+    "constraints": null,
+    "testCases": null,
+    "isPremium": "is_premium"
+  }
+}

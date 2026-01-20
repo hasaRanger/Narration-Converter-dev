@@ -1,0 +1,13 @@
+{
+  "datasetName": "datasetA",
+  "strict": true,
+  "columns": {
+    "id": "id",
+    "title": "title",
+    "description": "description",
+    "difficulty": "difficulty_level",
+    "examples": "examples",
+    "constraints": "constraints",
+    "testCases": "test_cases"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "learn": {
+    "countsPerDifficulty": {
+      "Easy": 15,
+      "Medium": 15,
+      "Hard": 15
+    }
+  },
+  "challenge": {
+    "difficulty": "Hard",
+    "phaseSize": 30
+  },
+  "languages": ["python", "java", "cpp", "javascript"]
+}
