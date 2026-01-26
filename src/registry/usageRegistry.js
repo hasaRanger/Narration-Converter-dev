@@ -31,3 +31,23 @@ export function addChallengeUsedHard(registry, problemIds, phase) {
   registry.challengeUsedHardProblemIds = Array.from(s);
   registry.phasesCompleted = Math.max(registry.phasesCompleted || 0, phase);
 }
+/**
+ * Reset options (ONLY run if user explicitly passes flags)
+ */
+export function resetRegistryAll(registry) {
+  registry.learnUsedProblemIds = [];
+  registry.challengeUsedHardProblemIds = [];
+  registry.phasesCompleted = 0;
+  return registry;
+}
+
+export function resetRegistryLearnOnly(registry) {
+  registry.learnUsedProblemIds = [];
+  return registry;
+}
+
+export function resetRegistryChallengesOnly(registry) {
+  registry.challengeUsedHardProblemIds = [];
+  registry.phasesCompleted = 0;
+  return registry;
+}
