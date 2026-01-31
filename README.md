@@ -1,175 +1,64 @@
-# Narration-Converter-dev
+# Narration Converter – CrackCode Content Generator
 
-Narration Converter – CrackCode Content Generator
-Overview
+The **Narration Converter** is a Node.js–based content generation tool developed for the **CrackCode** gamified learning platform. It transforms raw programming questions from CSV datasets into structured, narrative-driven, multi-language challenges for the CrackCode ecosystem.
 
-The Narration Converter is a Node.js–based content generation tool designed for the CrackCode gamified learning platform.
-It converts raw programming questions stored in CSV datasets into structured, narrative-based, multi-language questions that can be directly consumed by the CrackCode backend and frontend.
+The generator operates independently as an offline content preparation tool, ensuring data is ready for both the backend and frontend.
 
-The tool supports:
+---
 
-Story-driven question narration
+## 🚀 Core Capabilities
+* **Story-driven question narration** for immersive learning.
+* **Multi-language variants** (Python, Java, C++, JavaScript) per question.
+* **Bloom’s Taxonomy** tagging for educational tracking.
+* **Mode-based selection** (Learn vs. Challenge).
+* **Registry-based prevention** of duplicate content across runs.
 
-Multiple programming languages per question
+---
 
-Bloom’s Taxonomy tagging
+## ✨ Key Features
 
-Difficulty-based selection
+### 📖 Narrative Question Generation
+Converts plain logic problems into engaging stories. Each programming language follows a distinct thematic arc:
 
-Learn and Challenge modes
+| Language | Narrative Theme |
+| :--- | :--- |
+| **Python** | Detective / Noir storyline |
+| **Java** | Cyber-security / Enterprise storyline |
+| **C++** | Pirate / High-seas adventure |
+| **JavaScript** | Modern Quest / Web-space adventure |
 
-Registry-based duplicate prevention
+> **Note:** The narrative only affects the flavor text; problem logic remains identical across all versions.
 
-Key Features
-1. Narrative Question Generation
+### 🛠️ Mode Selection
+1. **Learn Mode**: Generates a stable set of 45 questions (15 Easy, 15 Medium, 15 Hard) to build structured roadmaps.
+2. **Challenge Mode**: Focuses on advanced practice with **Hard** questions only, released in phased batches (e.g., 30 per phase).
 
-Converts plain programming questions into story-based descriptions
+---
 
-Supports different storylines per programming language
-
-Python → Detective narrative
-
-Java → Java-specific storyline
-
-C++ → Pirate narrative
-
-JavaScript → Adventure narrative
-
-2. Multi-Language Variants
-
-Each question is generated with:
-
-Python starter code
-
-Java starter code
-
-C++ starter code
-
-JavaScript starter code
-
-All variants share the same test cases and constraints, ensuring consistency across languages.
-
-3. Learn Mode
-
-Generates a fixed learning set:
-
-15 Easy questions
-
-15 Medium questions
-
-15 Hard questions
-
-Used to build structured learning roadmaps
-
-Avoids repeating questions using a registry
-
-4. Challenge Mode
-
-Generates Hard questions only
-
-Supports phased releases (e.g., 30 questions per phase)
-
-Prevents duplication across phases
-
-Automatically detects when the question pool is exhausted and allows controlled repetition with a warning
-
-5. Registry-Based Duplication Control
-
-The system maintains a local registry to track:
-
-Questions already used in Learn mode
-
-Questions already used in Challenge phases
-
-This ensures:
-
-Learn and Challenge questions never overlap
-
-Consecutive runs do not reuse the same questions unless explicitly reset
-
-Project Structure (High Level)
+## 📂 Project Structure
+```text
 Narration-Converter-dev/
-│
 ├── data/
-│   ├── input/          # CSV datasets
-│   ├── output/         # Generated JSON files
-│   └── registry/       # Usage registry (duplicate prevention)
-│
+│   ├── input/          # Raw CSV datasets (LeetCode, etc.)
+│   ├── output/         # Generated JSON production files
+│   └── registry/       # Usage registry (JSON tracking)
 ├── src/
-│   ├── cli/            # Command-line interface
-│   ├── loaders/        # CSV loading logic
-│   ├── normalizer/     # Data normalization
+│   ├── cli/            # Command-line interface logic
+│   ├── loaders/        # CSV loading & parsing
+│   ├── normalizer/     # Data cleaning & normalization
 │   ├── classifier/     # Topic & Bloom classification
 │   ├── selector/       # Learn & Challenge selection logic
-│   ├── narrative/      # Story & narrative generation
-│   ├── registry/       # Registry read/write logic
-│   └── utils/          # Utility helpers
-│
-├── templates/          # Narrative templates
+│   ├── narrative/      # Story and template engines
+│   ├── registry/       # Registry Read/Write handlers
+│   └── utils/          # Shared utility helpers
 ├── package.json
 └── README.md
 
-Input Format
-Supported Inputs
-
-CSV datasets (e.g., custom dataset, LeetCode dataset)
-
-Required CSV Fields
-
-Minimum required fields:
-
-Question ID
-
-Title
-
-Description
-
-Difficulty
-
-Examples
-
-Constraints
-
-Test cases
-
-Different CSV formats are supported through dataset mapping configurations.
-
-Output Format
-Learn Output
-
-data/output/learn_programming.json
-
-Contains:
-
-Metadata (dataset, generation time, selection summary)
-
-45 questions (15 Easy, 15 Medium, 15 Hard)
-
-Each question includes:
-
-Original question data
-
-Bloom’s taxonomy level
-
-Story metadata
-
-Examples, constraints, test cases
-
-Language-specific narrative variants
-
-Challenge Output
-
-data/output/challenges_phase_X.json
-
-Contains:
-
-30 Hard questions per phase
-
-No overlap with Learn questions or previous phases
-
-How to Run the Program
-1. Install dependencies
+⚙️ How to Run
+1. Install Dependencies
+Bash
 npm install
+<<<<<<< HEAD
 ```
 Key files:
 - CLI: [src/cli/generate.js](src/cli/generate.js)  
@@ -261,3 +150,44 @@ npm run generate -- --mode challenge --phase 2 --dataset datasetA
 - Consider worker threads for CPU-bound classification/narrative generation and lazy language-variant generation to parallelize work.
 
 ---
+=======
+2. Generate Content
+Fresh start for Learn Mode (Resets history):
+
+Bash
+npm run generate -- --dataset datasetA --input data/input/datasetA.csv --mode learn --reset-registry
+Generate next Challenge Phase:
+
+Bash
+npm run generate -- --dataset datasetA --input data/input/datasetA.csv --mode challenge --phase 2
+🗺️ Future Enhancements
+🤖 AI Refinement: Using LLMs to polish the narrative flow.
+
+📊 Difficulty Re-scoring: Dynamic difficulty adjustment based on complexity analysis.
+
+☁️ Cloud Integration: Direct export to MongoDB for seamless platform updates.
+
+
+
+Markdown
+## ⚙️ How to Run
+
+### 1. Install Dependencies
+```bash
+npm install
+2. Generate Content
+Fresh start for Learn Mode (Resets history):
+
+Bash
+npm run generate -- --dataset datasetA --input data/input/datasetA.csv --mode learn --reset-registry
+Generate next Challenge Phase:
+
+Bash
+npm run generate -- --dataset datasetA --input data/input/datasetA.csv --mode challenge --phase 2
+🗺️ Future Enhancements
+🤖 AI Refinement: Using LLMs to polish the narrative flow.
+
+📊 Difficulty Re-scoring: Dynamic difficulty adjustment based on complexity analysis.
+
+☁️ Cloud Integration: Direct export to MongoDB for seamless platform updates
+>>>>>>> b309be56d0b313f53addd9d45f9c8c535aa63f84
