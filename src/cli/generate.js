@@ -14,8 +14,6 @@ import { detectBloom } from "../classifier/bloomClassifier.js";
 import { makeBeatId } from "../narrative/beatMaker.js";
 import { makeLanguageVariants } from "../narrative/variantMaker.js";
 
-import { refineVariant } from "../refinement/refinerEngine.js";
-
 import { pickLearnProblems } from "../selector/learnSelector.js";
 import { pickChallengeHardPhase } from "../selector/challengeSelector.js";
 
@@ -192,8 +190,7 @@ async function main() {
     addLearnUsed(registry, selected.map(p => p.problemId));
     saveUsageRegistry(registryPath, registry);
 
-    // Change .map to a Promise.all or explicit loop to handle async refinement
-    const outputItems = await Promise.all(selected.map(async (p) => {
+    const outputItems = selected.map((p) => {
       const variants = makeLanguageVariants({
         problemId: p.problemId,
         languages,
@@ -203,20 +200,6 @@ async function main() {
         topic: p.topic,
         original: p.original
       });
-
-      // [NEW] Refinement Layer
-      // We process variants in parallel or sequence. 
-      // Mapping over the variants to refine them one by one.
-      const refinedVariants = await Promise.all(variants.map(async (v) => {
-        const refinedNarrative = await refineVariant(v, {
-          difficulty: p.difficulty,
-          topic: p.topic,
-          bloom: p.bloom
-        });
-        
-        // Return a new variant object with the refined narrative
-        return { ...v, narrative: refinedNarrative };
-      }));
 
       const record = {
         problemId: p.problemId,
@@ -229,12 +212,12 @@ async function main() {
         examples: p.examples,
         constraints: p.constraints,
         test_cases: p.test_cases,
-        variants: refinedVariants // Use the refined variants here
+        variants
       };
 
       validateOutputRecord(record);
       return record;
-    }));
+    });
 
     const outPath = path.join("data", "output", "learn_programming.json");
     writeJson(outPath, {
@@ -263,29 +246,34 @@ async function main() {
     addChallengeUsedHard(registry, newUniqueIds, phase);
     saveUsageRegistry(registryPath, registry);
 
-    const outputItems = await Promise.all(selected.map(async (p) => {
+    const outputItems = selected.map((p) => {
       const variants = makeLanguageVariants({
-         // ... existing params
+        problemId: p.problemId,
+        languages,
+        languageToStory,
+        defaultStory,
+        mode: "challenge",
+        topic: p.topic,
+        original: p.original
       });
 
-      // [NEW] Refinement Layer
-      const refinedVariants = await Promise.all(variants.map(async (v) => {
-        const refinedNarrative = await refineVariant(v, {
-          difficulty: p.difficulty,
-          topic: p.topic,
-          bloom: p.bloom
-        });
-        return { ...v, narrative: refinedNarrative };
-      }));
-
       const record = {
-        // ... existing fields
-        variants: refinedVariants // Updated
+        problemId: p.problemId,
+        source: p.source,
+        original: p.original,
+        difficulty: p.difficulty,
+        topic: p.topic,
+        bloom: p.bloom,
+        beatId: null,
+        examples: p.examples,
+        constraints: p.constraints,
+        test_cases: p.test_cases,
+        variants
       };
 
       validateOutputRecord(record);
       return record;
-    }));
+    });
 
     const outPath = path.join("data", "output", `challenges_phase_${phase}.json`);
     writeJson(outPath, {
