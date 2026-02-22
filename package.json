@@ -1,5 +1,3 @@
-
-
 {
   "name": "crackcode-narrative-generator",
   "version": "1.0.0",
@@ -12,6 +10,8 @@
   },
   "dependencies": {
     "csv-parser": "^3.0.0",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.6.1",
+    "groq-sdk": "^0.37.0",
+    "p-limit": "^7.3.0"
   }
 }

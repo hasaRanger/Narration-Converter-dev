@@ -1,6 +1,7 @@
 import 'dotenv/config'; 
 import fs from "fs";
 import path from "path";
+import pLimit from "p-limit"; 
 
 import { log } from "../utils/logger.js";
 import { makeProblemId } from "../utils/idMaker.js";
@@ -13,6 +14,7 @@ import { detectBloom } from "../classifier/bloomClassifier.js";
 
 import { makeBeatId } from "../narrative/beatMaker.js";
 import { makeLanguageVariants } from "../narrative/variantMaker.js";
+import { refineVariant } from "../refinement/refinerEngine.js"; 
 
 import { pickLearnProblems } from "../selector/learnSelector.js";
 import { pickChallengeHardPhase } from "../selector/challengeSelector.js";
@@ -31,9 +33,7 @@ import {
 
 import { validateOutputRecord } from "../validator/outputValidator.js";
 
-/**
- * Resolves settings using the hierarchy: CLI Args > Environment Variables > Fallback
- */
+
 function getSetting(short, long, envKey, fallback = null) {
   const longIdx = process.argv.indexOf(`--${long}`);
   if (longIdx !== -1 && process.argv[longIdx + 1] && !process.argv[longIdx + 1].startsWith("-")) {
@@ -71,16 +71,22 @@ function toNumberOrFallback(value, fallbackNumber) {
 }
 
 async function main() {
-  // 1) Resolve core configurations
   const dataset = getSetting("d", "dataset", "DEFAULT_DATASET", "datasetA");
   const mode = getSetting("m", "mode", "DEFAULT_MODE"); 
   const phase = toNumberOrFallback(getSetting("p", "phase", null, "1"), 1);
+  
+  // Check for AI flags
+  const useAi = process.argv.includes("--ai") || process.argv.includes("--ai-refine");
 
-  // Inferred input path if not explicitly provided
+  // Limit concurrency to 1 to strictly control the rate.
+  const limit = pLimit(1); 
+  // Safety delay in milliseconds (2000ms = 2 seconds).
+  // 30 Requests Per Minute max = 1 request every 2 seconds.
+  const RATE_LIMIT_DELAY = 2000; 
+
   const defaultInput = `data/input/${dataset}.csv`;
   const input = getSetting("i", "input", null, defaultInput);
 
-  // Registry reset flags
   const resetAll = hasFlag("R", "reset-registry");
   const resetLearnOnly = hasFlag("rl", "reset-learn-only");
   const resetChallengesOnly = hasFlag("rc", "reset-challenges-only");
@@ -89,9 +95,10 @@ async function main() {
     log.error(
       "Usage: npm run generate -- -m <learn|challenge> [options]\n" +
       "Options:\n" +
-      "  -d, --dataset <name>    (Default: from .env or datasetA)\n" +
-      "  -i, --input <path>      (Default: data/input/<dataset>.csv)\n" +
-      "  -p, --phase <N>         (Default: 1)\n" +
+      "  -d, --dataset <name>\n" +
+      "  -i, --input <path>\n" +
+      "  -p, --phase <N>\n" +
+      "  --ai, --ai-refine       (Enable AI Refinement)\n" +
       "Reset Flags:\n" +
       "  -R,  --reset-registry\n" +
       "  -rl, --reset-learn-only\n" +
@@ -118,17 +125,15 @@ async function main() {
   const { rows } = await loadCsvRows(input);
   log.info(`Loaded ${rows.length} rows from ${input}`);
 
+  // Normalization
   const normalizedProblems = [];
   for (let i = 0; i < rows.length; i++) {
     try {
       const p = normalizeCsvRowToProblem(rows[i], mappingConfig);
       if (p.isPremium) continue;
-
       ensureExecutionFieldsExist(p);
-
       const sourceIdNumber = toNumberOrFallback(p.source.source_question_id, i + 1);
       const problemId = makeProblemId(sourceIdNumber);
-
       normalizedProblems.push({ ...p, problemId });
     } catch (e) {
       if (mappingConfig.strict) {
@@ -143,15 +148,16 @@ async function main() {
     throw new Error("No usable problems found after normalization.");
   }
 
+  // Enrichment
   const enrichedProblems = normalizedProblems.map((p) => {
     const combinedText = `${p.original.title}\n${p.original.description}`;
     const topic = detectTopic(combinedText);
     const bloom = detectBloom(combinedText, p.difficulty);
     const beatId = makeBeatId(bloom.score);
-
     return { ...p, topic, bloom, beatId };
   });
 
+  // Registry Management
   const registry = loadUsageRegistry(registryPath);
 
   if (resetAll) {
@@ -179,111 +185,194 @@ async function main() {
   const defaultStory = stories.defaultStory;
   const chapterId = stories.defaultChapterId;
 
+  //PROGRESS TRACKER HELPER 
+  let processedCount = 0;
+  const totalCount = (problems) => problems.length * languages.length;
+
+  // LEARN MODE
   if (mode === "learn") {
-    const availableForLearn = enrichedProblems.filter(p => !learnUsedSet.has(p.problemId));
+  const availableForLearn = enrichedProblems.filter(p => !learnUsedSet.has(p.problemId));
 
-    const { selected, meta } = pickLearnProblems({
-      allProblems: availableForLearn,
-      countsPerDifficulty: rules.learn.countsPerDifficulty
+  const { selected, meta } = pickLearnProblems({
+    allProblems: availableForLearn,
+    countsPerDifficulty: rules.learn.countsPerDifficulty
+  });
+
+  addLearnUsed(registry, selected.map(p => p.problemId));
+  saveUsageRegistry(registryPath, registry);
+
+  log.info(`[Learn Mode] Selected ${selected.length} problems. Starting AI Refinement...`);
+
+  const outputItems = [];
+  let processedVariants = 0;
+
+  for (const p of selected) {
+    const variants = makeLanguageVariants({
+      problemId: p.problemId,
+      languages,
+      languageToStory,
+      defaultStory,
+      mode: "learn",
+      topic: p.topic,
+      original: p.original
     });
 
-    addLearnUsed(registry, selected.map(p => p.problemId));
-    saveUsageRegistry(registryPath, registry);
-
-    const outputItems = selected.map((p) => {
-      const variants = makeLanguageVariants({
-        problemId: p.problemId,
-        languages,
-        languageToStory,
-        defaultStory,
-        mode: "learn",
-        topic: p.topic,
-        original: p.original
-      });
-
-      const record = {
-        problemId: p.problemId,
-        source: p.source,
-        original: p.original,
+    // Refine variants sequentially with proper rate limiting
+    const refinedVariants = [];
+    
+    for (const v of variants) {
+      // WAIT BEFORE making the request (proper rate limiting)
+      if (useAi && processedVariants > 0) {
+        await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY));
+      }
+      
+      const refined = await refineVariant(v, {
         difficulty: p.difficulty,
         topic: p.topic,
         bloom: p.bloom,
-        story: { chapterId, beatId: p.beatId },
-        examples: p.examples,
-        constraints: p.constraints,
-        test_cases: p.test_cases,
-        variants
-      };
+        skipAi: !useAi
+      });
+      
+      refinedVariants.push({ ...v, narrative: refined });
+      
+      if (useAi) {
+        processedVariants++;
+        if (processedVariants % 5 === 0) {
+          log.info(`[Progress] Refined ${processedVariants} variants...`);
+        }
+      }
+    }
 
-      validateOutputRecord(record);
-      return record;
-    });
+    const record = {
+      problemId: p.problemId,
+      source: p.source,
+      original: p.original,
+      difficulty: p.difficulty,
+      topic: p.topic,
+      bloom: p.bloom,
+      story: { chapterId, beatId: p.beatId },
+      examples: p.examples,
+      constraints: p.constraints,
+      test_cases: p.test_cases,
+      variants: refinedVariants
+    };
 
-    const outPath = path.join("data", "output", "learn_programming.json");
-    writeJson(outPath, {
-      meta: { dataset, mode: "learn", generatedAt: new Date().toISOString(), selection: meta },
-      items: outputItems
-    });
-
-    log.info(`Wrote Learn output: ${outPath}`);
-    return;
+    validateOutputRecord(record);
+    outputItems.push(record);
   }
 
-  if (mode === "challenge") {
-    const hardProblems = enrichedProblems.filter(p => p.difficulty === "Hard");
+  const outPath = path.join("data", "output", "learn_programming.json");
+  writeJson(outPath, {
+    meta: { 
+      dataset, 
+      mode: "learn", 
+      generatedAt: new Date().toISOString(), 
+      selection: meta, 
+      aiRefined: useAi,
+      totalVariantsProcessed: processedVariants
+    },
+    items: outputItems
+  });
 
-    const { selected, meta } = pickChallengeHardPhase({
-      hardProblems,
-      learnUsedSet,
-      challengeUsedSet,
-      phaseSize: rules.challenge.phaseSize
+  log.info(`✅ Wrote Learn output: ${outPath} (AI Refinement: ${useAi ? "ON" : "OFF"})`);
+  return;
+}
+
+// CHALLENGE MODE
+if (mode === "challenge") {
+  const hardProblems = enrichedProblems.filter(p => p.difficulty === "Hard");
+
+  const { selected, meta } = pickChallengeHardPhase({
+    hardProblems,
+    learnUsedSet,
+    challengeUsedSet,
+    phaseSize: rules.challenge.phaseSize
+  });
+
+  const newUniqueIds = selected
+    .filter(p => !challengeUsedSet.has(p.problemId) && !learnUsedSet.has(p.problemId))
+    .map(p => p.problemId);
+
+  addChallengeUsedHard(registry, newUniqueIds, phase);
+  saveUsageRegistry(registryPath, registry);
+
+  log.info(`[Challenge Mode] Selected ${selected.length} problems. Starting AI Refinement...`);
+
+  const outputItems = [];
+  let processedVariants = 0;
+
+  for (const p of selected) {
+    const variants = makeLanguageVariants({
+      problemId: p.problemId,
+      languages,
+      languageToStory,
+      defaultStory,
+      mode: "challenge",
+      topic: p.topic,
+      original: p.original
     });
 
-    const newUniqueIds = selected
-      .filter(p => !challengeUsedSet.has(p.problemId) && !learnUsedSet.has(p.problemId))
-      .map(p => p.problemId);
-
-    addChallengeUsedHard(registry, newUniqueIds, phase);
-    saveUsageRegistry(registryPath, registry);
-
-    const outputItems = selected.map((p) => {
-      const variants = makeLanguageVariants({
-        problemId: p.problemId,
-        languages,
-        languageToStory,
-        defaultStory,
-        mode: "challenge",
-        topic: p.topic,
-        original: p.original
-      });
-
-      const record = {
-        problemId: p.problemId,
-        source: p.source,
-        original: p.original,
+    // Refine variants sequentially with proper rate limiting
+    const refinedVariants = [];
+    
+    for (const v of variants) {
+      // WAIT BEFORE making the request (proper rate limiting)
+      if (useAi && processedVariants > 0) {
+        await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY));
+      }
+      
+      const refined = await refineVariant(v, {
         difficulty: p.difficulty,
         topic: p.topic,
         bloom: p.bloom,
-        beatId: null,
-        examples: p.examples,
-        constraints: p.constraints,
-        test_cases: p.test_cases,
-        variants
-      };
+        skipAi: !useAi
+      });
+      
+      refinedVariants.push({ ...v, narrative: refined });
+      
+      if (useAi) {
+        processedVariants++;
+        if (processedVariants % 5 === 0) {
+          log.info(`[Progress] Refined ${processedVariants} variants...`);
+        }
+      }
+    }
 
-      validateOutputRecord(record);
-      return record;
-    });
+    const record = {
+      problemId: p.problemId,
+      source: p.source,
+      original: p.original,
+      difficulty: p.difficulty,
+      topic: p.topic,
+      bloom: p.bloom,
+      beatId: null,
+      examples: p.examples,
+      constraints: p.constraints,
+      test_cases: p.test_cases,
+      variants: refinedVariants
+    };
 
-    const outPath = path.join("data", "output", `challenges_phase_${phase}.json`);
-    writeJson(outPath, {
-      meta: { dataset, mode: "challenge", phase, generatedAt: new Date().toISOString(), ...meta },
-      items: outputItems
-    });
-
-    log.info(`Wrote Challenge output: ${outPath}`);
-    return;
+    validateOutputRecord(record);
+    outputItems.push(record);
   }
+
+  const outPath = path.join("data", "output", `challenges_phase_${phase}.json`);
+  writeJson(outPath, {
+    meta: { 
+      dataset, 
+      mode: "challenge", 
+      phase, 
+      generatedAt: new Date().toISOString(), 
+      ...meta, 
+      aiRefined: useAi,
+      totalVariantsProcessed: processedVariants
+    },
+    items: outputItems
+  });
+
+  log.info(`✅ Wrote Challenge output: ${outPath} (AI Refinement: ${useAi ? "ON" : "OFF"})`);
+  return;
+}
 
   throw new Error(`Unknown mode '${mode}'. Use learn or challenge.`);
 }
