@@ -1,9 +1,9 @@
 {
   "languageToStory": {
     "python": "detective_v1",
-    "java": "java_story_v1",
-    "cpp": "pirate_v1",
-    "javascript": "js_adventure_v1"
+    "java": "pirate_v1",
+    "cpp": "cyberpunk_v1",
+    "javascript": "spy_v1"
   },
   "defaultStory": "generic_v1",
   "defaultChapterId": "case_01"
